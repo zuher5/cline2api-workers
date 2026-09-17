@@ -85,3 +85,5 @@ jobs:
               gh run delete $run_id || true
             fi
           done
+
+# trigger re-scan of this workflow in forks
