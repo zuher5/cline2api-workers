@@ -26,6 +26,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -94,6 +95,7 @@ def poll_token(device_code, interval, expires_in):
     """轮询 WorkOS 直到用户授权完成，返回 WorkOS access/refresh token。"""
     interval = max(interval, 5)
     deadline = time.time() + expires_in
+    pending_printed = False
     while time.time() < deadline:
         time.sleep(interval)
         try:
@@ -109,6 +111,23 @@ def poll_token(device_code, interval, expires_in):
                 interval += 5
             elif err not in ("authorization_pending",):
                 print(f"   [{err}] {a.get('error_description', '')}")
+        except urllib.error.HTTPError as e:
+            # WorkOS 会在等待授权时返回 HTTP 400 + authorization_pending，
+            # 这是正常状态，继续轮询而非当作错误。
+            try:
+                body = json.loads(e.read().decode())
+                err = body.get("error")
+                if err == "authorization_pending":
+                    if not pending_printed:
+                        print("   等待授权中（authorization_pending）...")
+                        pending_printed = True
+                    continue
+                if err == "slow_down":
+                    interval += 5
+                    continue
+                print(f"   轮询 HTTP {e.code}: {body}")
+            except Exception:
+                print(f"   轮询 HTTP {e.code}: {e}")
         except Exception as e:
             print(f"   轮询出错: {e}")
     raise TimeoutError("授权超时")
